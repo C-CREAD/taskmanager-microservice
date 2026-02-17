@@ -35,6 +35,6 @@ To run this project in a Docker image, open your terminal in the same directory 
    ```
 3. Run the task-service Docker image:
    ```sh
-   docker run -d --name postgres-test -e POSTGRES_DB=task_management -e POSTGRES_USER=your_username -e POSTGRES_PASSWORD=your_password -p 5432:5432 postgres:17-alpine
+   docker run -d -p 8000:8000 task-service:latest .  
    ```
 4. Click on the following link to access the web application: http://localhost:8000/api/
