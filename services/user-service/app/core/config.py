@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Task Management User Service"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
-    API_PREFIX: str = "/api/v1"
+    API_PREFIX: str = "/api"
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/users_db"
