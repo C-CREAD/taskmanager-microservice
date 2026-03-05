@@ -1,34 +1,35 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DJANGO_SETTINGS_MODULE=task_service.settings
 
 WORKDIR /app
 
 # Install system dependencies (CRITICAL!)
-RUN apt-get update \
-    && apt-get install -y build-essential libpq-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
 # Copy and install Python packages
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy project
-COPY . /app/
+COPY . .
 
-# Create logs directory
-RUN mkdir -p logs
-
-# Collect static files (don't fail if error)
-RUN python manage.py collectstatic --noinput 2>/dev/null || true
+# Create non-root user
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+USER appuser
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8002
 
 # Run migrations and start
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn task_service.wsgi:application --bind 0.0.0.0:8002 --workers 2 --timeout 60"]
 
-CMD ["sh", "-c", "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
