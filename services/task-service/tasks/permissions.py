@@ -1,48 +1,22 @@
-from rest_framework import permissions
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 
-class IsTaskOwner(permissions.BasePermission):
+class IsTaskOwner(BasePermission):
     """
-    Permission to check if user is the task owner.
-    Only allows task owners to edit/delete their own tasks.
+    Allow access only to the owner of the task.
+    Safe methods (GET, HEAD, OPTIONS) are also allowed to assignees.
     """
-
-    message = "You can only edit your own tasks."
+    message = "You do not have permission to modify this task."
 
     def has_object_permission(self, request, view, obj):
-        """
-        Checks if user has necessary read/write permissions.
-        """
-        # Read permissions for authenticated user
-        if request.method in permissions.SAFE_METHODS:
-            return obj.user == request.user
+        user_id = str(request.user.id)
 
-        # Write permissions for task owners only
-        return obj.user == request.user
-
-
-class IsCommentAuthor(permissions.BasePermission):
-    """
-    Permission to check if user is the comment author.
-    """
-
-    message = "You can only edit your own comments."
-
-    def has_object_permission(self, request, view, obj):
-        # Read permissions allowed
-        if request.method in permissions.SAFE_METHODS:
+        # Owners have full access
+        if obj.owner_id == user_id:
             return True
 
-        # Write permissions for authors only
-        return obj.author == request.user
+        # Assignees can read (and update status only — enforced in the view)
+        if request.method in SAFE_METHODS and obj.assignee_id == user_id:
+            return True
 
-
-class IsLabelOwner(permissions.BasePermission):
-    """
-    Permission to check if user owns the label.
-    """
-
-    message = "You can only use your own labels."
-
-    def has_object_permission(self, request, view, obj):
-        return obj.user == request.user
+        return False

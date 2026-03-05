@@ -1,140 +1,57 @@
-# filters.py
 import django_filters
-from django.db.models import Q, Count
 from django.utils import timezone
-from datetime import timedelta
-from .models import Task, TaskStatus, TaskPriority
+
+from .models import Task
 
 
-class TaskFilterSet(django_filters.FilterSet):
-    """
-    FilterSet for Task filtering and searching.
+class TaskFilter(django_filters.FilterSet):
+    # Exact matches
+    status = django_filters.MultipleChoiceFilter(choices=Task.Status.choices)
+    priority = django_filters.MultipleChoiceFilter(choices=Task.Priority.choices)
+    category = django_filters.NumberFilter(field_name="category__id")
 
-    • Filter types:
-        - status
-        - priority
-        - category
-        - due_date (before/after)
-        - created_at (before/after)
-        - has_labels/has_comments/has_due_date/is_overdue
+    # Date range filters on due_date
+    due_date_from = django_filters.DateTimeFilter(field_name="due_date", lookup_expr="gte")
+    due_date_to = django_filters.DateTimeFilter(field_name="due_date", lookup_expr="lte")
+    due_date_null = django_filters.BooleanFilter(field_name="due_date", lookup_expr="isnull")
 
-    • Search types:
-        - search (by different fields, e.g. title)
-        - labels
-    """
+    # Overdue shortcut
+    overdue = django_filters.BooleanFilter(method="filter_overdue", label="Overdue tasks only")
 
-    status = django_filters.MultipleChoiceFilter(
-        choices=TaskStatus.choices,
-        help_text="Filter by task status"
-    )
+    # Assignee filter
+    assignee_id = django_filters.CharFilter(field_name="assignee_id", lookup_expr="exact")
+    unassigned = django_filters.BooleanFilter(method="filter_unassigned")
 
-    priority = django_filters.MultipleChoiceFilter(
-        choices=TaskPriority.choices,
-        help_text="Filter by task priority"
-    )
-
-    category = django_filters.CharFilter(
-        lookup_expr='iexact',  # Case-insensitive
-        help_text="Filter by category name"
-    )
-
-    due_date_after = django_filters.DateTimeFilter(
-        field_name='due_date',
-        lookup_expr='gte',
-        help_text="Filter tasks due after this date"
-    )
-
-    due_date_before = django_filters.DateTimeFilter(
-        field_name='due_date',
-        lookup_expr='lte',
-        help_text="Filter tasks due before this date"
-    )
-
-    created_after = django_filters.DateTimeFilter(
-        field_name='created_at',
-        lookup_expr='gte'
-    )
-
-    created_before = django_filters.DateTimeFilter(
-        field_name='created_at',
-        lookup_expr='lte'
-    )
-
-    has_labels = django_filters.BooleanFilter(
-        method='filter_has_labels'
-    )
-
-    has_comments = django_filters.BooleanFilter(
-        method='filter_has_comments'
-    )
-
-    has_due_date = django_filters.BooleanFilter(
-        method='filter_has_due_date'
-    )
-
-    is_overdue = django_filters.BooleanFilter(
-        method='filter_is_overdue'
-    )
-
-    search = django_filters.CharFilter(
-        method='filter_search',
-        help_text="Search in title and description"
-    )
-
-    label_name = django_filters.CharFilter(
-        field_name='labels__name',
-        lookup_expr='iexact'
-    )
+    # Tags — pass tag=work&tag=urgent for AND match
+    tag = django_filters.CharFilter(method="filter_tag", label="Tag (contains)")
 
     class Meta:
         model = Task
-        fields = []
+        fields = [
+            "status",
+            "priority",
+            "category",
+            "due_date_from",
+            "due_date_to",
+            "due_date_null",
+            "overdue",
+            "assignee_id",
+            "unassigned",
+            "tag",
+        ]
 
-    def filter_has_labels(self, queryset, name, value):
-        """Filter tasks by whether they have labels"""
-        if value:
-            return queryset.filter(labels__isnull=False).distinct()
-        return queryset.filter(labels__isnull=True).distinct()
-
-    def filter_has_comments(self, queryset, name, value):
-        """Filter tasks by whether they have comments"""
-        if value:
-            return queryset.annotate(
-                comment_count=Count('comments')
-            ).filter(comment_count__gt=0)
-        return queryset
-
-    def filter_has_due_date(self, queryset, name, value):
-        """Filter tasks by whether they have a due date"""
-        if value:
-            return queryset.filter(due_date__isnull=False)
-        return queryset.filter(due_date__isnull=True)
-
-    def filter_is_overdue(self, queryset, name, value):
-        """Filter overdue tasks thar are not completed"""
+    def filter_overdue(self, queryset, name, value):
         if value:
             return queryset.filter(
-                due_date__lt=timezone.now(),
-                status__in=['pending', 'in_progress']
-            )
+                due_date__lt=timezone.now()
+            ).exclude(status__in=[Task.Status.DONE, Task.Status.CANCELLED])
         return queryset
 
-    def filter_search(self, queryset, name, value):
-        """
-        Search across multiple fields.
+    def filter_unassigned(self, queryset, name, value):
+        if value:
+            return queryset.filter(assignee_id="")
+        return queryset.exclude(assignee_id="")
 
-        Queries:
-        - Title (starts with, contains)
-        - Description
-        - Category
-        - Labels
-        """
-        if not value:
-            return queryset
-
-        return queryset.filter(
-            Q(title__icontains=value) |
-            Q(description__icontains=value) |
-            Q(category__icontains=value) |
-            Q(labels__name__icontains=value)
-        ).distinct()
+    def filter_tag(self, queryset, name, value):
+        # JSONField contains lookup — works on PostgreSQL
+        return queryset.filter(tags__contains=[value.lower().strip()])
