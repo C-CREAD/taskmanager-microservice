@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/notifications_db"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/notifications_db"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/2"
