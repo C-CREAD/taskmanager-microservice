@@ -11,31 +11,29 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 import os
 from pathlib import Path
-from celery.schedules import crontab
-from .config import load_env
+from dotenv import load_dotenv
+from datetime import timedelta
+
+load_dotenv(override=False)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', default='dev-secret-key')
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "insecure-dev-key-change-me")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', default=False)
+DEBUG = os.getenv("DEBUG", "False")
 
-ALLOWED_HOSTS = ['*']     # Temporary
-# ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 
 # Application definition
-
 INSTALLED_APPS = [
-    'tasks',
-    'rest_framework',
-    'corsheaders',
     'django_celery_beat',
     'django_celery_results',
     'django_filters',
@@ -45,6 +43,13 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
+    'corsheaders',
+    'drf_spectacular',
+    'tasks',
+    'categories',
 ]
 
 MIDDLEWARE = [
@@ -82,24 +87,18 @@ WSGI_APPLICATION = 'task_service.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        "NAME": os.getenv("DB_NAME", "task_management"),
-        "USER": os.getenv("DB_USER", "admin"),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),    # Removed for now
-        "HOST": os.getenv("DB_HOST"),
-        "PORT": os.getenv("DB_PORT", "5432"),
+        'NAME': os.getenv('DB_NAME', 'tasks_db'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
 
+print(DATABASES)
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -119,6 +118,134 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# REST Framework Configuration
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "task_service.authentication.RemoteJWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "task_service.pagination.StandardPagination",
+    "PAGE_SIZE": 20,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# JWT Configuration
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": os.getenv("JWT_SECRET_KEY", "change-me-in-production-must-be-at-least-32-characters"),
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "UTC"
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+# CORS Configuration
+def parse_list_env(key: str, default: str) -> list:
+    """
+    Robustly parse a list env var regardless of how Docker Compose
+    or the shell has quoted/formatted it. Handles:
+      - JSON array:          '["http://a","http://b"]'
+      - Wrapped in quotes:   '"["http://a","http://b"]"'
+      - Comma-separated:     'http://a,http://b'
+      - Single value:        'http://a'
+    """
+    import json
+    raw = os.getenv(key, default)
+
+    raw = raw.strip().strip("'\"")
+
+    if raw.startswith("["):
+        try:
+            parsed = json.loads(raw)
+
+            return [item.strip().strip("'\"") for item in parsed]
+        except json.JSONDecodeError:
+            pass
+
+    return [
+        item.strip().strip("'\"")
+        for item in raw.split(",")
+        if item.strip().strip("'\"")
+    ]
+
+CORS_ALLOWED_ORIGINS = parse_list_env("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+
+# Internal service URLs
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://localhost:8001")
+NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8003")
+
+# Logging Configuration
+# LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+# if not os.path.exists(LOGS_DIR):
+#     os.makedirs(LOGS_DIR, exist_ok=True)
+#
+# LOGGING = {
+#     'version': 1,
+#     'disable_existing_loggers': False,
+#     'formatters': {
+#         'verbose': {
+#             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+#             'style': '{',
+#         },
+#         'simple': {
+#             'format': '{levelname} {asctime} {message}',
+#             'style': '{',
+#         },
+#     },
+#     'filters': {
+#         'require_debug_false': {
+#             '()': 'django.utils.log.RequireDebugFalse',
+#         },
+#         'require_debug_true': {
+#             '()': 'django.utils.log.RequireDebugTrue',
+#         },
+#     },
+#     'handlers': {
+#         'console': {
+#             'level': 'DEBUG',
+#             'class': 'logging.StreamHandler',
+#             'formatter': 'simple'
+#         },
+#         'file': {
+#             'level': 'INFO',
+#             'class': 'logging.handlers.RotatingFileHandler',
+#             'filename': os.path.join(LOGS_DIR, 'task_service.log'),
+#             'maxBytes': 1024 * 1024 * 15,  # 15MB
+#             'backupCount': 10,
+#             'formatter': 'verbose',
+#         },
+#     },
+#     'root': {
+#         'handlers': ['console', 'file'],
+#         'level': 'INFO',
+#     },
+#     'loggers': {
+#         'django': {
+#             'handlers': ['console', 'file'],
+#             'level': 'INFO',
+#             'propagate': False,
+#         },
+#         'tasks': {
+#             'handlers': ['console', 'file'],
+#             'level': 'DEBUG',
+#             'propagate': False,
+#         },
+#     },
+# }
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
@@ -131,161 +258,14 @@ USE_I18N = True
 
 USE_TZ = True
 
-# REST Framework Configuration
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
-    'DEFAULT_FILTER_BACKENDS': [
-        'django_filters.rest_framework.DjangoFilterBackend',
-        'rest_framework.filters.SearchFilter',
-        'rest_framework.filters.OrderingFilter',
-    ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/hour',
-        'user': '1000/hour'
-    }
-}
-
-# CORS Configuration
-CORS_ALLOWED_ORIGINS = os.getenv(
-    'CORS_ALLOWED_ORIGINS',
-    'http://localhost:3000,http://localhost:8000'
-).split(',')
-
-CORS_ALLOW_CREDENTIALS = True
-
-# Celery Configuration
-# CELERY_BROKER_URL = os.getenv(
-#     'CELERY_BROKER_URL',
-#     'amqp://guest:guest@rabbitmq:5672//'
-# )
-# CELERY_RESULT_BACKEND = os.getenv(
-#     'CELERY_RESULT_BACKEND',
-#     'redis://redis:6379/0'
-# )
-CELERY_BROKER_URL = 'memory://'
-CELERY_RESULT_BACKEND = 'cache+memory://'
-
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
-CELERY_ENABLE_UTC = True
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
-CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
-
-# Celery Beat Schedule
-CELERY_BEAT_SCHEDULE = {
-    'send-task-reminders': {
-        'task': 'tasks.send_due_date_reminder',
-        'schedule': crontab(hour=9, minute=0),
-    },
-    'check-overdue-tasks': {
-        'task': 'tasks.check_overdue_tasks_batch',
-        'schedule': crontab(minute='*/30'),
-    },
-    'cleanup-deleted-tasks': {
-        'task': 'tasks.cleanup_deleted_tasks',
-        'schedule': crontab(hour=0, minute=0),
-    },
-}
-
-# Redis Configuration
-REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
-
-CACHES = {
-    # 'default': {
-    #     'BACKEND': 'django_redis.cache.RedisCache',
-    #     'LOCATION': REDIS_URL,
-    #     'OPTIONS': {
-    #         'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-    #     }
-    # }
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
-    }
-}
-
-# Logging Configuration
-LOGS_DIR = os.path.join(BASE_DIR, 'logs')
-if not os.path.exists(LOGS_DIR):
-    os.makedirs(LOGS_DIR, exist_ok=True)
-
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {asctime} {message}',
-            'style': '{',
-        },
-    },
-    'filters': {
-        'require_debug_false': {
-            '()': 'django.utils.log.RequireDebugFalse',
-        },
-        'require_debug_true': {
-            '()': 'django.utils.log.RequireDebugTrue',
-        },
-    },
-    'handlers': {
-        'console': {
-            'level': 'DEBUG',
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple'
-        },
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(LOGS_DIR, 'task_service.log'),
-            'maxBytes': 1024 * 1024 * 15,  # 15MB
-            'backupCount': 10,
-            'formatter': 'verbose',
-        },
-    },
-    'root': {
-        'handlers': ['console', 'file'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'tasks': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-    },
-}
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
