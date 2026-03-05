@@ -1,85 +1,55 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Integer
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.sql import func
 import uuid
+from datetime import datetime, timezone
 
+from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
-Base = declarative_base()
+from app.db.session import Base
 
 
 class User(Base):
-    """
-    User model representing users in the system
+    __tablename__ = "users"
 
-    • User information
-        - id: UUID (i.e. User ID) Primary key to uniquely identify User record
-        - username: Username of the User
-        - first_name: User's first name
-        - last_name: User's last name
-        - password: User's password
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        index=True,
+    )
+    email: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
+    )
+    username: Mapped[str] = mapped_column(
+        String(50), unique=True, nullable=False, index=True
+    )
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    • Status information
-        - is_active: Checks if the user is marked for deletion
-        - is_verified: Checks if the user's account has been verified (after registration)
-        - is_admin: Checks if user has admin privileges
+    # Profile fields
+    full_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    • Audit information
-        - created_at/updated_at: Audit trail for User information
-        - last_login: Gets the date of the User's last login
-        - login_count: Tracks how many times the user has logged in to the system successfully.
-    """
-    __tablename__ = 'users'
+    # Status
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    id = Column(String,
-                primary_key=True,
-                default=lambda: str(uuid.uuid4())
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
-    email = Column(String(255),
-                  unique=True,
-                  nullable=False,
-                  index=True
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
-    username = Column(String(50),
-                  unique=True,
-                  nullable=False,
-                  index=True
-    )
-    password = Column(String(255),
-                      nullable=False
-    )
-    first_name = Column(String(100),
-                      nullable=True
-    )
-    last_name = Column(String(255),
-                      nullable=True
+    last_login: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
-    is_active = Column(Boolean,
-                       default=True,
-                       index=True
-    )
-    is_verified = Column(Boolean,
-                       default=False,
-    )
-    is_admin = Column(Boolean,
-                       default=False
-    )
-    created_at = Column(DateTime(timezone=True),
-                        server_default=func.now(),
-                        nullable=False
-
-    )
-    updated_at = Column(DateTime(timezone=True),
-                        server_default=func.now(),
-                        onupdate=func.now(),
-                        nullable=False
-    )
-    last_login = Column(DateTime(timezone=True),
-                        nullable=True
-    )
-    login_count = Column(Integer,
-                        default=0
-    )
-
-    def __repr__(self):
-        return f"| User {self.username} |"
+    def __repr__(self) -> str:
+        return f"<User id={self.id} email={self.email}>"

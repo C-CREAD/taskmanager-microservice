@@ -1,40 +1,58 @@
-import os
+from functools import lru_cache
+from typing import Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
-from typing import Optional
 
 
 class Settings(BaseSettings):
-    """Application settings"""
-
     # App
-    app_name: str = "User Service"
-    app_version: str = "1.0.0"
-    debug: bool = os.getenv('DEBUG')
+    APP_NAME: str = "Task Management User Service"
+    APP_VERSION: str = "1.0.0"
+    DEBUG: bool = False
+    API_PREFIX: str = "/api/v1"
 
     # Database
-    db_name: str = os.getenv('DB_NAME', 'user_service')
-    db_user: str = os.getenv('DB_USER')
-    db_password: str = os.getenv('DB_PASSWORD')
-    db_host: str = os.getenv('DB_HOST')
-    db_port: int = os.getenv('DB_PORT')
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/users_db"
 
-    @property
-    def database_url(self) -> str:
-        """Build database URL"""
-        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+    # JWT
+    JWT_SECRET_KEY: str = "change-me-in-production-must-be-at-least-32-characters"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # Security
-    secret_key: str = os.getenv('SECRET_KEY')
-    algorithm: str = os.getenv('ALGORITHM')
-    access_token_expire_minutes: int = os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES')
-    refresh_token_expire_days: int = os.getenv('REFRESH_TOKEN_EXPIRE_DAYS')
+    # Rate Limiting
+    RATE_LIMIT_PER_MINUTE: int = 60
 
     # CORS
-    allowed_origins: list = os.getenv('ALLOWED_ORIGINS')
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8080"]
 
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v: Any) -> list[str]:
+        """
+        Accept any of these formats:
+          - A real Python list (already parsed):  ["http://..."]
+          - A JSON array string:                  '["http://...","http://..."]'
+          - A comma-separated string:             'http://...,http://...'
+        """
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                import json
+                return json.loads(v)
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
     class Config:
         env_file = ".env"
-        case_sensitive = False
+        case_sensitive = True
 
-settings = Settings()
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
