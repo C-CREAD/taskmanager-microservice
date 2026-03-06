@@ -1,0 +1,424 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task Management — Docker Compose
+# Brings up all 4 microservices + Nginx gateway + PostgreSQL DBs + Redis
+#
+# Usage:
+#   docker compose up --build          # first run
+#   docker compose up -d               # detached (background)
+#   docker compose down -v             # stop + remove volumes
+#   docker compose logs -f <service>   # tail a service's logs
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Shared environment ────────────────────────────────────────────────────────
+# Single source of truth for values shared across multiple services.
+# Override any value by creating a root-level .env file.
+
+x-jwt: &jwt
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-min-32-chars-long}
+  JWT_ALGORITHM: HS256
+
+x-pg-creds: &pg-creds
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+
+x-celery: &celery
+  CELERY_BROKER_URL: redis://redis:6379/1
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+
+  # Nginx (API Gateway / Reverse Proxy)
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: task_manager_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      user-service:
+        condition: service_healthy
+      task-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      analytics-service:
+        condition: service_healthy
+    networks:
+      - gateway
+      - services
+    <<: [*restart, *logging]
+
+  # PostgreSQL Databases
+  users_db:
+    image: postgres:16-alpine
+    container_name: task_manager_users_db
+    environment:
+      <<: *pg-creds
+      POSTGRES_DB: users_db
+    volumes:
+      - users_db_data:/var/lib/postgresql/data
+    networks:
+      - databases
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d users_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: [*restart, *logging]
+
+  tasks_db:
+    image: postgres:16-alpine
+    container_name: task_manager_tasks_db
+    environment:
+      <<: *pg-creds
+      POSTGRES_DB: tasks_db
+    volumes:
+      - tasks_db_data:/var/lib/postgresql/data
+    networks:
+      - databases
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d tasks_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: [*restart, *logging]
+
+  notifications_db:
+    image: postgres:16-alpine
+    container_name: task_manager_notifications_db
+    environment:
+      <<: *pg-creds
+      POSTGRES_DB: notifications_db
+    volumes:
+      - notifications_db_data:/var/lib/postgresql/data
+    networks:
+      - databases
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d notifications_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: [*restart, *logging]
+
+  analytics_db:
+    image: postgres:16-alpine
+    container_name: task_manager_analytics_db
+    environment:
+      <<: *pg-creds
+      POSTGRES_DB: analytics_db
+    volumes:
+      - analytics_db_data:/var/lib/postgresql/data
+    networks:
+      - databases
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d analytics_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: [*restart, *logging]
+
+  # Redis (Celery broker + WebSocket pub/sub + cache)
+  redis:
+    image: redis:7-alpine
+    container_name: task_manager_redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - cache
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: [*restart, *logging]
+
+  # User Service (FastAPI - port 8001)
+  user-service:
+    build:
+      context: ./user-service/user-service
+      dockerfile: Dockerfile
+    container_name: task_manager_user_service
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@users_db:5432/users_db
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+    depends_on:
+      users_db:
+        condition: service_healthy
+    networks:
+      - services
+      - databases
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    <<: [*restart, *logging]
+
+  # Task Service (Django REST - port 8002)
+  task-service:
+    build:
+      context: ./task-service
+      dockerfile: Dockerfile
+    container_name: task_manager_task_service
+    environment:
+      <<: [*jwt, *celery]
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@tasks_db:5432/tasks_db
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-insecure-django-key-change-in-production}
+      DEBUG: ${DEBUG:-False}
+      DB_ENGINE: django.db.backends.postgresql
+      DB_NAME: tasks_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: task_manager_tasks_db
+      DB_PORT: 5432
+      ALLOWED_HOSTS: localhost,127.0.0.1,task-service,nginx
+      USER_SERVICE_URL: http://user-service:8001
+      NOTIFICATION_SERVICE_URL: http://notification-service:8003
+      CORS_ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
+    depends_on:
+      tasks_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    networks:
+      - services
+      - databases
+      - cache
+    expose:
+      - "8002"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8002/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    <<: [*restart, *logging]
+
+  # Task Service Celery Worker (due-date reminders)
+  task-celery-worker:
+    build:
+      context: ./task-service
+      dockerfile: Dockerfile
+    container_name: task_manager_task_celery
+    command: celery -A task_service worker -B -l info --concurrency=2
+    environment:
+      <<: [*jwt, *celery]
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@tasks_db:5432/tasks_db
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-insecure-django-key-change-in-production}
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_HOSTS: localhost
+      USER_SERVICE_URL: http://user-service:8001
+      NOTIFICATION_SERVICE_URL: http://notification-service:8003
+    depends_on:
+      tasks_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - services
+      - databases
+      - cache
+    <<: [*restart, *logging]
+
+  # Notification Service (FastAPI - port 8003)
+  notification-service:
+    build:
+      context: ./notification-service/notification-service
+      dockerfile: Dockerfile
+    container_name: task_manager_notification_service
+    environment:
+      <<: [*jwt, *celery]
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@notifications_db:5432/notifications_db
+      REDIS_URL: redis://redis:6379/2
+      CELERY_BROKER_URL: redis://redis:6379/2
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:-smtp.mailtrap.io}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-creadchristopher@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-nivtrreufpzsdfvh}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-TaskManagement}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-creadchristopher@gmail.com}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
+      FIREBASE_CREDENTIALS_PATH: ${FIREBASE_CREDENTIALS_PATH:-}
+      USER_SERVICE_URL: http://user-service:8001
+      TASK_SERVICE_URL: http://task-service:8002
+    depends_on:
+      notifications_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - services
+      - databases
+      - cache
+    expose:
+      - "8003"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8003/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    <<: [*restart, *logging]
+
+  # Notification Celery Worker — email queue
+  notifications-celery-email:
+    build:
+      context: ./notification-service/notification-service
+      dockerfile: Dockerfile
+    container_name: task_manager_notification_celery_email
+    command: celery -A app.workers.celery_app worker -Q email -l info --concurrency=4
+    environment:
+      <<: [*jwt, *celery]
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@notifications_db:5432/notifications_db
+      REDIS_URL: redis://redis:6379/2
+      CELERY_BROKER_URL: redis://redis:6379/2
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SMTP_HOST: ${SMTP_HOST:-smtp.mailtrap.io}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-creadchristopher@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-nivtrreufpzsdfvh}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-TaskManagement}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-creadchristopher@gmail.com}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
+    depends_on:
+      notifications_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - databases
+      - cache
+    <<: [*restart, *logging]
+
+  # Notification Celery Worker — push queue
+  notifications-celery-push:
+    build:
+      context: ./notification-service/notification-service
+      dockerfile: Dockerfile
+    container_name: task_manager_notifications_celery_push
+    command: celery -A app.workers.celery_app worker -Q push -l info --concurrency=4
+    environment:
+      <<: [*jwt, *celery]
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@notifications_db:5432/notifications_db
+      REDIS_URL: redis://redis:6379/2
+      CELERY_BROKER_URL: redis://redis:6379/2
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      FIREBASE_CREDENTIALS_PATH: ${FIREBASE_CREDENTIALS_PATH:-}
+    depends_on:
+      notifications_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - databases
+      - cache
+    <<: [*restart, *logging]
+
+  # Analytics Service (FastAPI - port 8004)
+  analytics-service:
+    build:
+      context: ./analytics-service/analytics-service
+      dockerfile: Dockerfile
+    container_name: task_manager_analytics_service
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@analytics_db:5432/analytics_db
+      REDIS_URL: redis://redis:6379/3
+      CELERY_BROKER_URL: redis://redis:6379/3
+      CELERY_RESULT_BACKEND: redis://redis:6379/3
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
+      TASK_SERVICE_URL: http://task-service:8002
+      USER_SERVICE_URL: http://user-service:8001
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
+    depends_on:
+      analytics_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      task-service:
+        condition: service_healthy
+    networks:
+      - services
+      - databases
+      - cache
+    expose:
+      - "8004"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8004/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    <<: [*restart, *logging]
+
+  # Analytics Celery Worker (nightly snapshots)
+  analytics-celery-worker:
+    build:
+      context: ./analytics-service/analytics-service
+      dockerfile: Dockerfile
+    container_name: task_management_analytics_celery
+    command: celery -A app.workers.celery_app worker -B -l info --concurrency=2
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@analytics_db:5432/analytics_db
+      REDIS_URL: redis://redis:6379/3
+      CELERY_BROKER_URL: redis://redis:6379/3
+      CELERY_RESULT_BACKEND: redis://redis:6379/3
+      TASK_SERVICE_URL: http://task-service:8002
+      USER_SERVICE_URL: http://user-service:8001
+    depends_on:
+      analytics_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - services
+      - databases
+      - cache
+    <<: [*restart, *logging]
+
+volumes:
+  users_db_data:
+  tasks_db_data:
+  notifications_db_data:
+  analytics_db_data:
+  redis_data:
+
+networks:
+  gateway:       # Nginx ↔ services (public-facing)
+    driver: bridge
+  services:      # inter-service REST calls (internal)
+    driver: bridge
+  databases:     # services ↔ PostgreSQL (isolated)
+    driver: bridge
+  cache:         # services ↔ Redis
+    driver: bridge
