@@ -37,18 +37,41 @@ x-logging: &logging
       max-size: "10m"
       max-file: "3"
 
+x-origins: &origins
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:8080}
+
 services:
 
+  # Frontend Service (React + Vite + Nginx)
+  frontend:
+    build:
+      context: ./frontend-service
+      dockerfile: Dockerfile
+    container_name: task_manager_frontend
+    networks:
+      - gateway
+    expose:
+      - "80"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:80/ > /dev/null || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    <<: [ *restart, *logging ]
+    
   # Nginx (API Gateway / Reverse Proxy)
   nginx:
     image: nginx:1.25-alpine
     container_name: task_manager_nginx
     ports:
-      - "80:80"
+      - "8080:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
     depends_on:
+      frontend:
+        condition: service_healthy
       user-service:
         condition: service_healthy
       task-service:
@@ -194,7 +217,7 @@ services:
       DB_PASSWORD: your_password
       DB_HOST: task_manager_tasks_db
       DB_PORT: 5432
-      ALLOWED_HOSTS: localhost,127.0.0.1,task-service,nginx
+      ALLOWED_HOSTS: localhost,127.0.0.1,task-service,nginx,frontend
       USER_SERVICE_URL: http://user-service:8001
       NOTIFICATION_SERVICE_URL: http://notification-service:8003
       CORS_ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
