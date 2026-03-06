@@ -155,7 +155,7 @@ services:
     container_name: task_manager_user_service
     environment:
       <<: *jwt
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@users_db:5432/users_db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-your_username}:${POSTGRES_PASSWORD:-your_password}@users_db:5432/users_db
       DEBUG: ${DEBUG:-False}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
@@ -185,13 +185,13 @@ services:
     container_name: task_manager_task_service
     environment:
       <<: [*jwt, *celery]
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@tasks_db:5432/tasks_db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-your_username}:${POSTGRES_PASSWORD:-your_password}@tasks_db:5432/tasks_db
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-insecure-django-key-change-in-production}
       DEBUG: ${DEBUG:-False}
       DB_ENGINE: django.db.backends.postgresql
       DB_NAME: tasks_db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
+      DB_USER: your_username
+      DB_PASSWORD: your_password
       DB_HOST: task_manager_tasks_db
       DB_PORT: 5432
       ALLOWED_HOSTS: localhost,127.0.0.1,task-service,nginx
@@ -228,7 +228,7 @@ services:
     command: celery -A task_service worker -B -l info --concurrency=2
     environment:
       <<: [*jwt, *celery]
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@tasks_db:5432/tasks_db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-your_username}:${POSTGRES_PASSWORD:-your_password}@tasks_db:5432/tasks_db
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-insecure-django-key-change-in-production}
       DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: localhost
@@ -253,7 +253,7 @@ services:
     container_name: task_manager_notification_service
     environment:
       <<: [*jwt, *celery]
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@notifications_db:5432/notifications_db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-your_username}:${POSTGRES_PASSWORD:-your_password}@notifications_db:5432/notifications_db
       REDIS_URL: redis://redis:6379/2
       CELERY_BROKER_URL: redis://redis:6379/2
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -261,10 +261,10 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
       SMTP_HOST: ${SMTP_HOST:-smtp.mailtrap.io}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-creadchristopher@gmail.com}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-nivtrreufpzsdfvh}
+      SMTP_USERNAME: ${SMTP_USERNAME:-your_email@example.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-your_password}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-TaskManagement}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-creadchristopher@gmail.com}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-your_example@example.com}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
       FIREBASE_CREDENTIALS_PATH: ${FIREBASE_CREDENTIALS_PATH:-}
       USER_SERVICE_URL: http://user-service:8001
@@ -297,16 +297,16 @@ services:
     command: celery -A app.workers.celery_app worker -Q email -l info --concurrency=4
     environment:
       <<: [*jwt, *celery]
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@notifications_db:5432/notifications_db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-your_username}:${POSTGRES_PASSWORD:-your_password}@notifications_db:5432/notifications_db
       REDIS_URL: redis://redis:6379/2
       CELERY_BROKER_URL: redis://redis:6379/2
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       SMTP_HOST: ${SMTP_HOST:-smtp.mailtrap.io}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-creadchristopher@gmail.com}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-nivtrreufpzsdfvh}
+      SMTP_USERNAME: ${SMTP_USERNAME:-your_email@example.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-your_password}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-TaskManagement}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-creadchristopher@gmail.com}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-your_email@example.com}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
     depends_on:
       notifications_db:
@@ -327,7 +327,7 @@ services:
     command: celery -A app.workers.celery_app worker -Q push -l info --concurrency=4
     environment:
       <<: [*jwt, *celery]
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@notifications_db:5432/notifications_db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-your_username}:${POSTGRES_PASSWORD:-your_password}@notifications_db:5432/notifications_db
       REDIS_URL: redis://redis:6379/2
       CELERY_BROKER_URL: redis://redis:6379/2
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -350,7 +350,7 @@ services:
     container_name: task_manager_analytics_service
     environment:
       <<: *jwt
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@analytics_db:5432/analytics_db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-your_username}:${POSTGRES_PASSWORD:-your_password}@analytics_db:5432/analytics_db
       REDIS_URL: redis://redis:6379/3
       CELERY_BROKER_URL: redis://redis:6379/3
       CELERY_RESULT_BACKEND: redis://redis:6379/3
@@ -389,7 +389,7 @@ services:
     command: celery -A app.workers.celery_app worker -B -l info --concurrency=2
     environment:
       <<: *jwt
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@analytics_db:5432/analytics_db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-your_username}:${POSTGRES_PASSWORD:-your_password}@analytics_db:5432/analytics_db
       REDIS_URL: redis://redis:6379/3
       CELERY_BROKER_URL: redis://redis:6379/3
       CELERY_RESULT_BACKEND: redis://redis:6379/3
