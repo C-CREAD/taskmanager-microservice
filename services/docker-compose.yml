@@ -20,8 +20,8 @@ x-jwt: &jwt
   JWT_ALGORITHM: HS256
 
 x-pg-creds: &pg-creds
-  POSTGRES_USER: ${POSTGRES_USER:-postgres}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  POSTGRES_USER: ${POSTGRES_USER:-your_username}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your_username}
 
 x-celery: &celery
   CELERY_BROKER_URL: redis://redis:6379/1
