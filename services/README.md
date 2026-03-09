@@ -44,6 +44,7 @@ make health
 | Task Service | Django REST | :8002 (internal) | `/api/tasks/docs/` |
 | Notification Service | FastAPI | :8003 (internal) | `/api/docs` |
 | Analytics Service | FastAPI | :8004 (internal) | `/api/docs` |
+| Frontend Service | Vite + React | :3000 (internal) | `/` |
 
 All services are accessed via Nginx on **port 80** in Docker.
 
