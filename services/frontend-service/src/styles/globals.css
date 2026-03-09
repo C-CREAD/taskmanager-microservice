@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  body {
+    @apply bg-forge-bg text-forge-text font-body antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, #00ff9d0a 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 80%, #4d9fff06 0%, transparent 50%);
+    background-attachment: fixed;
+  }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { @apply bg-forge-bg; }
+  ::-webkit-scrollbar-thumb { @apply bg-forge-muted rounded-full; }
+}
+
+@layer components {
+  .card {
+    @apply bg-forge-surface border border-forge-border rounded-xl p-5;
+  }
+
+  .btn-primary {
+    @apply bg-forge-accent text-forge-bg font-display font-semibold text-sm px-5 py-2.5
+           rounded-lg transition-all duration-200 hover:bg-forge-accent-dim
+           active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply text-forge-text-2 font-body text-sm px-4 py-2 rounded-lg
+           border border-forge-border transition-all duration-200
+           hover:bg-forge-muted hover:text-forge-text hover:border-forge-muted
+           active:scale-95;
+  }
+
+  .btn-danger {
+    @apply bg-forge-danger/10 text-forge-danger font-body text-sm px-4 py-2 rounded-lg
+           border border-forge-danger/20 transition-all duration-200
+           hover:bg-forge-danger/20 active:scale-95;
+  }
+
+  .input {
+    @apply w-full bg-forge-surface border border-forge-border rounded-lg
+           px-4 py-2.5 text-sm text-forge-text font-body
+           placeholder:text-forge-text-3
+           focus:outline-none focus:border-forge-accent/60 focus:ring-1
+           focus:ring-forge-accent/20 transition-all duration-200;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-medium;
+  }
+
+  .badge-todo        { @apply badge bg-forge-muted/60 text-forge-text-2; }
+  .badge-in_progress { @apply badge bg-forge-info/15 text-forge-info; }
+  .badge-in_review   { @apply badge bg-purple-500/15 text-purple-400; }
+  .badge-done        { @apply badge bg-forge-accent/15 text-forge-accent; }
+  .badge-cancelled   { @apply badge bg-forge-danger/10 text-forge-danger; }
+
+  .badge-low    { @apply badge bg-forge-muted/40 text-forge-text-3; }
+  .badge-medium { @apply badge bg-forge-info/10 text-forge-info; }
+  .badge-high   { @apply badge bg-forge-warn/15 text-forge-warn; }
+  .badge-urgent { @apply badge bg-forge-danger/15 text-forge-danger; }
+
+  .stat-card {
+    @apply card flex flex-col gap-1 hover:border-forge-muted transition-colors duration-200;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-body
+           text-forge-text-2 transition-all duration-200 cursor-pointer
+           hover:bg-forge-muted hover:text-forge-text;
+  }
+
+  .nav-item-active {
+    @apply nav-item bg-forge-muted text-forge-text;
+  }
+}
